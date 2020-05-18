@@ -1,6 +1,6 @@
 [package]
 name = "async-httplib"
-description = "Low-level HTTP helpers"
+description = "Low-level HTTP helpers."
 license = "MIT"
 version = "0.1.0"
 authors = ["Kristijan Sedlak <xpepermint@gmail.com>"]
