@@ -4,7 +4,6 @@ mod parse;
 mod read;
 mod relay;
 mod status;
-mod utils;
 mod version;
 mod write;
 

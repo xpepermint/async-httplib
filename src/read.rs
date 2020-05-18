@@ -156,7 +156,7 @@ pub async fn read_chunk_line<I>(input: &mut I, data: (&mut Vec<u8>, &mut Vec<u8>
     Ok(length)
 }
 
-pub async fn read_chunks<I>(input: &mut I, data: &mut Vec<u8>, limit: Option<usize>) -> Result<usize, Error>
+pub async fn read_chunks<I>(input: &mut I, data: &mut Vec<u8>, limits: (Option<usize>, Option<usize>)) -> Result<usize, Error>
     where
     I: Read + Unpin,
 {
@@ -165,10 +165,7 @@ pub async fn read_chunks<I>(input: &mut I, data: &mut Vec<u8>, limit: Option<usi
 
     loop {
         let (mut size, mut ext) = (vec![], vec![]);
-        length += read_chunk_line(input, (&mut size, &mut ext), match limit {
-            Some(limit) => Some(limit - total),
-            None => None,
-        }).await?;
+        length += read_chunk_line(input, (&mut size, &mut ext), limits.0).await?;
         let size = match String::from_utf8(size) {
             Ok(length) => match i64::from_str_radix(&length, 16) {
                 Ok(length) => length as usize,
@@ -180,7 +177,7 @@ pub async fn read_chunks<I>(input: &mut I, data: &mut Vec<u8>, limit: Option<usi
         if size == 0 {
             length += read_exact(input, &mut Vec::new(), 2).await?;
             break; // last chunk
-        } else if limit.is_some() && total + size > limit.unwrap() {
+        } else if limits.1.is_some() && total + size > limits.1.unwrap() {
             return Err(Error::LimitExceeded);
         } else {
             length += read_exact(input, data, size).await?;
@@ -246,11 +243,11 @@ mod tests {
     #[async_std::test]
     async fn reads_chunks() {
         let mut output = Vec::new();
-        let size = read_chunks(&mut "6\r\nHello \r\n6;ex=fo\r\nWorld!\r\n0\r\n\r\nTrail: er\r\n\r\n".as_bytes(), &mut output, None).await.unwrap(); // with extension `ex=fo` and trailer `Trail: er`
+        let size = read_chunks(&mut "6\r\nHello \r\n6;ex=fo\r\nWorld!\r\n0\r\n\r\nTrail: er\r\n\r\n".as_bytes(), &mut output, (None, None)).await.unwrap(); // with extension `ex=fo` and trailer `Trail: er`
         assert_eq!(size, 33);
         assert_eq!(String::from_utf8(output).unwrap(), "Hello World!");
         let mut output = Vec::new();
-        let exceeded = read_chunks(&mut "6\r\nHello 0\r\n\r\n".as_bytes(), &mut output, Some(1)).await;
+        let exceeded = read_chunks(&mut "6\r\nHello 0\r\n\r\n".as_bytes(), &mut output, (Some(1), None)).await;
         assert!(exceeded.is_err());
     }
 }

@@ -1,45 +1,7 @@
 use async_std::prelude::*;
 use async_std::io::{Read, Write};
-use crate::{Error, write_all, flush_write};
-use crate::utils::{has_sequence};
+use crate::{Error, read_chunk_line, write_all, flush_write};
 
-// TODO: Do not read more then `length`!
-// TODO: Respect trailers!
-pub async fn relay_chunks<I, O>(input: &mut I, output: &mut O, limit: Option<usize>) -> Result<usize, Error>
-    where
-    I: Read + Unpin,
-    O: Write + Unpin,
-{
-    let mut buffer: Vec<u8> = Vec::new();
-    let mut count = 0;
-    loop {
-        if limit.is_some() && count >= limit.unwrap() {
-            return Err(Error::LimitExceeded);
-        }
-
-        let mut bytes = [0u8; 1024];
-        let size = match input.read(&mut bytes).await {
-            Ok(size) => size,
-            Err(_) => return Err(Error::UnableToRead),
-        };
-        let mut bytes = &mut bytes[0..size].to_vec();
-        count += size;
-
-        write_all(output, &bytes).await?;
-        flush_write(output).await?;
-
-        buffer.append(&mut bytes);
-        buffer = (&buffer[buffer.len()-5..]).to_vec();
-        if has_sequence(&buffer, &[48, 13, 10, 13, 10]) { // last chunk
-            break;
-        }
-        buffer = (&buffer[buffer.len()-5..]).to_vec();
-    }
-
-    Ok(count)
-}
-
-// TODO: Do not read more then `length`!
 pub async fn relay_exact<I, O>(input: &mut I, output: &mut O, length: usize) -> Result<usize, Error>
     where
     I: Read + Unpin,
@@ -49,39 +11,97 @@ pub async fn relay_exact<I, O>(input: &mut I, output: &mut O, length: usize) -> 
         return Ok(0);
     }
 
-    let mut count = 0;
+    let bufsize = 1024;
+    let mut total = 0;
+    
     loop {
-        let mut bytes = [0u8; 1024];
+        let bufsize = match length - total < bufsize {
+            true => length - total, // do not read more than necessary
+            false => bufsize,
+        };
+
+        let mut bytes = vec![0u8; bufsize];
         let size = match input.read(&mut bytes).await {
             Ok(size) => size,
             Err(_) => return Err(Error::UnableToRead),
         };
-        let bytes = &mut bytes[0..size].to_vec();
-        count += size;
+        total += size;
 
         write_all(output, &bytes).await?;
         flush_write(output).await?;
 
-        if size == 0 || count == length {
+        if size == 0 || total == length {
             break;
-        } else if count > length {
+        } else if total > length {
             return Err(Error::LimitExceeded);
         }
     }
 
-    Ok(count)
+    Ok(total)
 }
 
+pub async fn relay_chunks<I, O>(input: &mut I, output: &mut O, limits: (Option<usize>, Option<usize>)) -> Result<usize, Error>
+    where
+    I: Read + Unpin,
+    O: Write + Unpin,
+{
+    let mut length = 0;
+    let mut total = 0; // actual data size
+
+    loop {
+        let (mut size, mut ext) = (vec![], vec![]);
+        read_chunk_line(input, (&mut size, &mut ext), limits.0).await?;
+
+        length += write_all(output, &size).await?;
+        if !ext.is_empty() {
+            length += write_all(output, b";").await?;
+            length += write_all(output, &ext).await?;
+        }
+        length += write_all(output, b"\r\n").await?;
+
+        let size = match String::from_utf8(size) {
+            Ok(length) => match i64::from_str_radix(&length, 16) {
+                Ok(length) => length as usize,
+                Err(_) => return Err(Error::InvalidInput),
+            },
+            Err(_) => return Err(Error::InvalidInput),
+        };
+
+        if size == 0 {
+            length += relay_exact(input, output, 2).await?;
+            break; // last chunk
+        } else if limits.1.is_some() && total + size > limits.1.unwrap() {
+            return Err(Error::LimitExceeded);
+        } else {
+            total += size;
+            length += relay_exact(input, output, size).await?;
+            length += relay_exact(input, output, 2).await?;
+        }
+    }
+
+    Ok(length)
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[async_std::test]
+    async fn relays_exact() {
+        let mut output = Vec::new();
+        let size = relay_exact(&mut "0123456789".as_bytes(), &mut output, 5).await.unwrap();
+        assert_eq!(size, 5);
+        assert_eq!(output, b"01234");
+    }
+
+    #[async_std::test]
     async fn relays_chunks() {
-        let mut input = "6\r\nHello \r\n6\r\nWorld!\r\n0\r\n\r\nFoo: bar\r\n\r\n".as_bytes();
-        // let mut output = Vec::new();
-        // relay_chunks(&mut input, &mut output, None).await.unwrap();
-        // assert_eq!(output, b"Hello World!");
+        let mut output = Vec::new();
+        let size = relay_chunks(&mut "6\r\nHello \r\n6;ex;ey\r\nWorld!\r\n0\r\n\r\nFoo: bar\r\n\r\n".as_bytes(), &mut output, (None, None)).await.unwrap();
+        assert_eq!(size, 33);
+        assert_eq!(output, "6\r\nHello \r\n6;ex;ey\r\nWorld!\r\n0\r\n\r\n".as_bytes());
+        let mut output = Vec::new();
+        let exceeds = relay_chunks(&mut "3\r\nHel\r\n0;ex;".as_bytes(), &mut output, (None, Some(2))).await;
+        assert!(exceeds.is_err());
     }
 }
