@@ -1,0 +1,17 @@
+[package]
+name = "async-httplib"
+description = "Low-level HTTP helpers"
+license = "MIT"
+version = "0.1.0"
+authors = ["Kristijan Sedlak <xpepermint@gmail.com>"]
+edition = "2018"
+documentation = "https://github.com/xpepermint/async-httplib"
+homepage = "https://github.com/xpepermint/async-httplib"
+repository = "https://github.com/xpepermint/async-httplib"
+readme = "README.md"
+
+[dependencies]
+async-std = { version = "^1.5.0" }
+
+[dev-dependencies]
+async-std = { version = "^1.5.0", features = ["attributes"] }
