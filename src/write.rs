@@ -30,18 +30,18 @@ pub async fn flush_write<O>(output: &mut O) -> Result<(), Error>
     }
 }
 
-pub async fn write_exact<I, O>(input: &mut I, output: &mut O, length: usize) -> Result<usize, Error>
+pub async fn write_exact<O, I>(output: &mut O, input: &mut I, length: usize) -> Result<usize, Error>
     where
-    I: Read + Unpin,
     O: Write + Unpin,
+    I: Read + Unpin,
 {
     relay_exact(input, output, length).await
 }
 
-pub async fn write_chunks<I, O>(input: &mut I, output: &mut O, limits: (Option<usize>, Option<usize>)) -> Result<usize, Error>
+pub async fn write_chunks<O, I>(output: &mut O, input: &mut I, limits: (Option<usize>, Option<usize>)) -> Result<usize, Error>
     where
-    I: Read + Unpin,
     O: Write + Unpin,
+    I: Read + Unpin,
 {
     let (chunklimit, datalimit) = limits;
     let chunksize = match chunklimit {
@@ -88,7 +88,7 @@ mod tests {
     #[async_std::test]
     async fn writes_exact() {
         let mut output = Vec::new();
-        let size = write_exact(&mut "0123456789".as_bytes(), &mut output, 5).await.unwrap();
+        let size = write_exact(&mut output, &mut "0123456789".as_bytes(), 5).await.unwrap();
         assert_eq!(size, 5);
         assert_eq!(output, b"01234");
     }
@@ -96,11 +96,11 @@ mod tests {
     #[async_std::test]
     async fn writes_chunks() {
         let mut output = Vec::new();
-        let size = write_chunks(&mut "0123456789".as_bytes(), &mut output, (Some(3), None)).await.unwrap();
+        let size = write_chunks(&mut output, &mut "0123456789".as_bytes(), (Some(3), None)).await.unwrap();
         assert_eq!(size, 35);
         assert_eq!(output, "3\r\n012\r\n3\r\n345\r\n3\r\n678\r\n1\r\n9\r\n0\r\n\r\n".as_bytes());
         let mut output = Vec::new();
-        let size = write_chunks(&mut "0123456789".as_bytes(), &mut output, (Some(3), Some(4))).await.unwrap();
+        let size = write_chunks(&mut output, &mut "0123456789".as_bytes(), (Some(3), Some(4))).await.unwrap();
         assert_eq!(size, 19);
         assert_eq!(output, "3\r\n012\r\n1\r\n3\r\n0\r\n\r\n".as_bytes());
     }
