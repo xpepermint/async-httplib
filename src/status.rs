@@ -1,4 +1,5 @@
 use std::fmt::{self, Display};
+use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::str::FromStr;
 use crate::Error;
@@ -558,6 +559,18 @@ impl FromStr for Status {
     }
 }
 
+impl PartialOrd for Status {
+    fn partial_cmp(&self, other: &Status) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Status {
+    fn cmp(&self, other: &Status) -> Ordering {
+        (*self as usize).cmp(&(*other as usize))
+    }
+}
+
 impl PartialEq<Status> for u16 {
     fn eq(&self, other: &Status) -> bool {
         *self == *other as u16
@@ -595,5 +608,11 @@ mod tests {
     fn implements_to_string() {
         let status = Status::from_str("200").unwrap();
         assert_eq!(status.to_string(), "200");
+    }
+
+    #[test]
+    fn implements_ordering() {
+        assert!(Status::Ok < Status::Created);
+        assert!(Status::Ok == Status::Ok);
     }
 }

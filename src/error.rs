@@ -1,5 +1,4 @@
-
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum Error {
     InvalidMethod,
     InvalidVersion,

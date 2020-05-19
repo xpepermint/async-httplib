@@ -1,14 +1,15 @@
 use std::fmt::{self, Display};
+use std::cmp::Ordering;
 use std::str::FromStr;
 use crate::Error;
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, Hash)]
 pub enum Version {
-    Http0_9,
-    Http1_0,
-    Http1_1,
-    Http2_0,
-    Http3_0,
+    Http0_9 = 9,
+    Http1_0 = 10,
+    Http1_1 = 11,
+    Http2_0 = 20,
+    Http3_0 = 30,
 }
 
 impl Display for Version {
@@ -58,6 +59,24 @@ impl<'a> std::convert::TryFrom<&[u8]> for Version {
     }
 }
 
+impl PartialOrd for Version {
+    fn partial_cmp(&self, other: &Version) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Version {
+    fn cmp(&self, other: &Version) -> Ordering {
+        (*self as usize).cmp(&(*other as usize))
+    }
+}
+
+impl PartialEq for Version {
+    fn eq(&self, other: &Version) -> bool {
+        (*self as usize) == (*other as usize)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,5 +98,12 @@ mod tests {
     fn implements_to_string() {
         let version = Version::from_str("2.0").unwrap();
         assert_eq!(version.to_string(), "HTTP/2");
+    }
+
+    #[test]
+    fn implements_ordering() {
+        assert!(Version::Http1_1 > Version::Http0_9);
+        assert!(Version::Http0_9 < Version::Http1_0);
+        assert!(Version::Http1_0 == Version::Http1_0);
     }
 }
