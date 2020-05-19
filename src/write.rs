@@ -52,8 +52,6 @@ pub async fn write_chunks<I, O>(input: &mut I, output: &mut O, limits: (Option<u
     let mut length = 0; // data written bytes
     
     loop {
-        println!("===========> total:{} + chunksize:{} > datalimit:{:?}", total, chunksize, datalimit);
-
         let chunksize = match datalimit {
             Some(datalimit) => match length + chunksize > datalimit {
                 true => datalimit - length,
@@ -69,8 +67,6 @@ pub async fn write_chunks<I, O>(input: &mut I, output: &mut O, limits: (Option<u
         };
         bytes = bytes[0..size].to_vec();
         length += size;
-
-        println!("===========> size:{}", size);
 
         total += write_all(output, format!("{:x}\r\n", size).as_bytes()).await?;
         total += write_all(output, &bytes).await?;
