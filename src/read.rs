@@ -111,9 +111,7 @@ pub async fn read_exact<I>(input: &mut I, data: &mut Vec<u8>, length: usize) -> 
 
     Ok(length)
 }
-// 19;ex\r\n
-// data\r\n
-// \r\n
+
 pub async fn read_chunk_line<I>(input: &mut I, data: (&mut Vec<u8>, &mut Vec<u8>), limit: Option<usize>) -> Result<usize, Error>
     where
     I: Read + Unpin,
@@ -160,12 +158,13 @@ pub async fn read_chunks<I>(input: &mut I, data: &mut Vec<u8>, limits: (Option<u
     where
     I: Read + Unpin,
 {
+    let (chunklimit, datalimit) = limits;
     let mut length = 0;
     let mut total = 0; // actual data size
 
     loop {
         let (mut size, mut ext) = (vec![], vec![]);
-        length += read_chunk_line(input, (&mut size, &mut ext), limits.0).await?;
+        length += read_chunk_line(input, (&mut size, &mut ext), chunklimit).await?;
         let size = match String::from_utf8(size) {
             Ok(length) => match i64::from_str_radix(&length, 16) {
                 Ok(length) => length as usize,
@@ -177,7 +176,7 @@ pub async fn read_chunks<I>(input: &mut I, data: &mut Vec<u8>, limits: (Option<u
         if size == 0 {
             length += read_exact(input, &mut Vec::new(), 2).await?;
             break; // last chunk
-        } else if limits.1.is_some() && total + size > limits.1.unwrap() {
+        } else if datalimit.is_some() && total + size > datalimit.unwrap() {
             return Err(Error::LimitExceeded);
         } else {
             length += read_exact(input, data, size).await?;

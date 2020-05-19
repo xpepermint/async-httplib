@@ -45,12 +45,13 @@ pub async fn relay_chunks<I, O>(input: &mut I, output: &mut O, limits: (Option<u
     I: Read + Unpin,
     O: Write + Unpin,
 {
+    let (chunklimit, datalimit) = limits;
     let mut length = 0;
     let mut total = 0; // actual data size
 
     loop {
         let (mut size, mut ext) = (vec![], vec![]);
-        read_chunk_line(input, (&mut size, &mut ext), limits.0).await?;
+        read_chunk_line(input, (&mut size, &mut ext), chunklimit).await?;
 
         length += write_all(output, &size).await?;
         if !ext.is_empty() {
@@ -70,7 +71,7 @@ pub async fn relay_chunks<I, O>(input: &mut I, output: &mut O, limits: (Option<u
         if size == 0 {
             length += relay_exact(input, output, 2).await?;
             break; // last chunk
-        } else if limits.1.is_some() && total + size > limits.1.unwrap() {
+        } else if datalimit.is_some() && total + size > datalimit.unwrap() {
             return Err(Error::LimitExceeded);
         } else {
             total += size;
