@@ -41,6 +41,13 @@ impl Method {
             _ => false,
         }
     }
+
+    pub fn has_body(&self) -> bool {
+        match self {
+            Method::Post | Method::Put | Method::Delete | Method::Patch => true,
+            _ => false,
+        }
+    }
 }
 
 impl Display for Method {
