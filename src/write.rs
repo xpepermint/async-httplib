@@ -2,7 +2,7 @@ use async_std::prelude::*;
 use async_std::io::{Read, Write};
 use crate::{Error, relay_exact};
 
-pub async fn write_all<O>(output: &mut O, data: &[u8]) -> Result<usize, Error>
+pub async fn write_slice<O>(output: &mut O, data: &[u8]) -> Result<usize, Error>
     where
     O: Write + Unpin,
 {
@@ -10,14 +10,6 @@ pub async fn write_all<O>(output: &mut O, data: &[u8]) -> Result<usize, Error>
         Ok(size) => Ok(size),
         Err(_) => Err(Error::UnableToWrite),
     }
-}
-
-pub async fn write_line<O>(output: &mut O, data: &[u8]) -> Result<usize, Error>
-    where
-    O: Write + Unpin,
-{
-    write_all(output, data).await?;
-    write_all(output, b"\r\n").await
 }
 
 pub async fn flush_write<O>(output: &mut O) -> Result<(), Error>
@@ -38,6 +30,36 @@ pub async fn write_exact<O, I>(output: &mut O, input: &mut I, length: usize) -> 
     relay_exact(input, output, length).await
 }
 
+pub async fn write_all<O, I>(output: &mut O, input: &mut I, limit: Option<usize>) -> Result<usize, Error>
+    where
+    O: Write + Unpin,
+    I: Read + Unpin,
+{
+    let mut total = 0; // all written bytes
+    let mut length = 0; // data written bytes
+    
+    loop {
+        let mut bytes = vec![0u8; 1024];
+        let size = match input.read(&mut bytes).await {
+            Ok(size) => size,
+            Err(_) => return Err(Error::UnableToRead),
+        };
+        bytes = bytes[0..size].to_vec();
+        length += size;
+
+        if size == 0 {
+            break;
+        } else if limit.is_some() && length > limit.unwrap() {
+            return Err(Error::LimitExceeded);
+        }
+
+        total += write_slice(output, &bytes).await?;
+        flush_write(output).await?;
+    }
+
+    Ok(total)
+}
+
 pub async fn write_chunks<O, I>(output: &mut O, input: &mut I, limits: (Option<usize>, Option<usize>)) -> Result<usize, Error>
     where
     O: Write + Unpin,
@@ -52,14 +74,6 @@ pub async fn write_chunks<O, I>(output: &mut O, input: &mut I, limits: (Option<u
     let mut length = 0; // data written bytes
     
     loop {
-        let chunksize = match datalimit {
-            Some(datalimit) => match length + chunksize > datalimit {
-                true => datalimit - length,
-                false => chunksize,
-            },
-            None => chunksize,
-        };
-
         let mut bytes = vec![0u8; chunksize];
         let size = match input.read(&mut bytes).await {
             Ok(size) => size,
@@ -68,9 +82,13 @@ pub async fn write_chunks<O, I>(output: &mut O, input: &mut I, limits: (Option<u
         bytes = bytes[0..size].to_vec();
         length += size;
 
-        total += write_all(output, format!("{:x}\r\n", size).as_bytes()).await?;
-        total += write_all(output, &bytes).await?;
-        total += write_all(output, b"\r\n").await?;
+        if datalimit.is_some() && length > datalimit.unwrap() {
+            return Err(Error::LimitExceeded);
+        }
+
+        total += write_slice(output, format!("{:x}\r\n", size).as_bytes()).await?;
+        total += write_slice(output, &bytes).await?;
+        total += write_slice(output, b"\r\n").await?;
         flush_write(output).await?;
 
         if size == 0 {
@@ -94,14 +112,24 @@ mod tests {
     }
 
     #[async_std::test]
+    async fn writes_all() {
+        let mut output = Vec::new();
+        let size = write_all(&mut output, &mut "0123456789".as_bytes(), None).await.unwrap();
+        assert_eq!(size, 10);
+        assert_eq!(output, b"0123456789");
+        let mut output = Vec::new();
+        let exceeded = write_all(&mut output, &mut "012".as_bytes(), Some(2)).await;
+        assert!(exceeded.is_err());
+    }
+
+    #[async_std::test]
     async fn writes_chunks() {
         let mut output = Vec::new();
         let size = write_chunks(&mut output, &mut "0123456789".as_bytes(), (Some(3), None)).await.unwrap();
         assert_eq!(size, 35);
         assert_eq!(output, "3\r\n012\r\n3\r\n345\r\n3\r\n678\r\n1\r\n9\r\n0\r\n\r\n".as_bytes());
         let mut output = Vec::new();
-        let size = write_chunks(&mut output, &mut "0123456789".as_bytes(), (Some(3), Some(4))).await.unwrap();
-        assert_eq!(size, 19);
-        assert_eq!(output, "3\r\n012\r\n1\r\n3\r\n0\r\n\r\n".as_bytes());
+        let exceeded = write_chunks(&mut output, &mut "0123456789".as_bytes(), (Some(3), Some(4))).await;
+        assert!(exceeded.is_err());
     }
 }

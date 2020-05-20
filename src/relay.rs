@@ -1,6 +1,6 @@
 use async_std::prelude::*;
 use async_std::io::{Read, Write};
-use crate::{Error, read_chunk_line, write_all, flush_write};
+use crate::{Error, read_chunk_line, write_slice, flush_write};
 
 pub async fn relay_exact<I, O>(input: &mut I, output: &mut O, length: usize) -> Result<usize, Error>
     where
@@ -27,7 +27,7 @@ pub async fn relay_exact<I, O>(input: &mut I, output: &mut O, length: usize) -> 
         };
         total += size;
 
-        write_all(output, &bytes).await?;
+        write_slice(output, &bytes).await?;
         flush_write(output).await?;
 
         if size == 0 || total == length {
@@ -53,12 +53,12 @@ pub async fn relay_chunks<I, O>(input: &mut I, output: &mut O, limits: (Option<u
         let (mut size, mut ext) = (vec![], vec![]);
         read_chunk_line(input, (&mut size, &mut ext), chunklimit).await?;
 
-        length += write_all(output, &size).await?;
+        length += write_slice(output, &size).await?;
         if !ext.is_empty() {
-            length += write_all(output, b";").await?;
-            length += write_all(output, &ext).await?;
+            length += write_slice(output, b";").await?;
+            length += write_slice(output, &ext).await?;
         }
-        length += write_all(output, b"\r\n").await?;
+        length += write_slice(output, b"\r\n").await?;
 
         let size = match String::from_utf8(size) {
             Ok(length) => match i64::from_str_radix(&length, 16) {
