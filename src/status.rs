@@ -405,8 +405,13 @@ impl Status {
         num >= 500 && num < 600
     }
 
+    /// Status code
+    pub fn code(&self) -> u16 {
+        *self as u16
+    }
+
     /// The canonical reason for a given status code
-    pub fn canonical_reason(&self) -> &'static str {
+    pub fn reason(&self) -> &'static str {
         match self {
             Status::Continue => "Continue",
             Status::SwitchingProtocols => "Switching Protocols",
@@ -589,6 +594,12 @@ impl Display for Status {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn implements_data() {
+        assert_eq!(Status::Ok.code(), 200);
+        assert_eq!(Status::Ok.reason(), "OK");
+    }
 
     #[test]
     fn implements_try_from() {

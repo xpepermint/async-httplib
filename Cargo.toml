@@ -2,7 +2,7 @@
 name = "async-httplib"
 description = "Low-level HTTP helpers."
 license = "MIT"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["Kristijan Sedlak <xpepermint@gmail.com>"]
 edition = "2018"
 documentation = "https://github.com/xpepermint/async-httplib"
