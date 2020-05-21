@@ -1,5 +1,6 @@
-use crate::{Method, Status, Version, Error};
+use std::io::Error;
 use std::convert::TryFrom;
+use crate::{Method, Status, Version};
 
 pub fn parse_method(data: Vec<u8>) -> Result<Method, Error> {
     let data: &[u8] = &data;

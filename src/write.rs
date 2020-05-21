@@ -1,25 +1,20 @@
 use async_std::prelude::*;
 use async_std::io::{Read, Write};
-use crate::{Error, relay_exact};
+use std::io::{Error, ErrorKind};
+use crate::{relay_exact};
 
 pub async fn write_slice<O>(output: &mut O, data: &[u8]) -> Result<usize, Error>
     where
     O: Write + Unpin,
 {
-    match output.write(data).await {
-        Ok(size) => Ok(size),
-        Err(_) => Err(Error::UnableToWrite),
-    }
+    output.write(data).await
 }
 
 pub async fn flush_write<O>(output: &mut O) -> Result<(), Error>
     where
     O: Write + Unpin,
 {
-    match output.flush().await {
-        Ok(_) => Ok(()),
-        Err(_) => Err(Error::UnableToWrite),
-    }
+    output.flush().await
 }
 
 pub async fn write_exact<O, I>(output: &mut O, input: &mut I, length: usize) -> Result<usize, Error>
@@ -40,21 +35,18 @@ pub async fn write_all<O, I>(output: &mut O, input: &mut I, limit: Option<usize>
     
     loop {
         let mut bytes = vec![0u8; 1024];
-        let size = match input.read(&mut bytes).await {
-            Ok(size) => size,
-            Err(_) => return Err(Error::UnableToRead),
-        };
+        let size = input.read(&mut bytes).await?;
         bytes = bytes[0..size].to_vec();
         length += size;
 
         if size == 0 {
             break;
         } else if limit.is_some() && length > limit.unwrap() {
-            return Err(Error::LimitExceeded);
+            return Err(Error::new(ErrorKind::InvalidData, format!("The operation hit the limit of {} bytes while writing.", limit.unwrap())));
         }
 
-        total += write_slice(output, &bytes).await?;
-        flush_write(output).await?;
+        total += output.write(&bytes).await?;
+        output.flush().await?;
     }
 
     Ok(total)
@@ -75,21 +67,18 @@ pub async fn write_chunks<O, I>(output: &mut O, input: &mut I, limits: (Option<u
     
     loop {
         let mut bytes = vec![0u8; chunksize];
-        let size = match input.read(&mut bytes).await {
-            Ok(size) => size,
-            Err(_) => return Err(Error::UnableToRead),
-        };
+        let size = input.read(&mut bytes).await?;
         bytes = bytes[0..size].to_vec();
         length += size;
 
         if datalimit.is_some() && length > datalimit.unwrap() {
-            return Err(Error::LimitExceeded);
+            return Err(Error::new(ErrorKind::InvalidData, format!("The operation hit the limit of {} bytes while writing chunked HTTP body.", datalimit.unwrap())));
         }
 
-        total += write_slice(output, format!("{:x}\r\n", size).as_bytes()).await?;
-        total += write_slice(output, &bytes).await?;
-        total += write_slice(output, b"\r\n").await?;
-        flush_write(output).await?;
+        total += output.write(format!("{:x}\r\n", size).as_bytes()).await?;
+        total += output.write(&bytes).await?;
+        total += output.write(b"\r\n").await?;
+        output.flush().await?;
 
         if size == 0 {
             break;

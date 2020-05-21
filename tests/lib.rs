@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use async_httplib::{read_first_line, read_header, read_exact, parse_method,
+use async_httplib::{read_first_line, read_header_line, read_exact, parse_method,
     parse_status, parse_version, Method, Status, Version};
 
 #[async_std::test]
@@ -26,7 +26,7 @@ async fn reads_request() {
     let mut headers: HashMap<String, String> = HashMap::new();
     loop {
         let (mut name, mut value) = (vec![], vec![]);
-        read_header(&mut stream, (&mut name, &mut value), None).await.unwrap();
+        read_header_line(&mut stream, (&mut name, &mut value), None).await.unwrap();
         if name.len() == 0 {
             break;
         } else {
@@ -68,7 +68,7 @@ async fn reads_response() {
     let mut headers: HashMap<String, String> = HashMap::new();
     loop {
         let (mut name, mut value) = (vec![], vec![]);
-        read_header(&mut stream, (&mut name, &mut value), None).await.unwrap();
+        read_header_line(&mut stream, (&mut name, &mut value), None).await.unwrap();
         if name.len() == 0 {
             break;
         } else {

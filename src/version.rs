@@ -1,7 +1,7 @@
 use std::fmt::{self, Display};
 use std::cmp::Ordering;
+use std::io::{Error, ErrorKind};
 use std::str::FromStr;
-use crate::Error;
 
 #[derive(Debug, Clone, Copy, Eq, Hash)]
 pub enum Version {
@@ -26,10 +26,10 @@ impl Display for Version {
 }
 
 impl FromStr for Version {
-    type Err = crate::Error;
+    type Err = Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+    fn from_str(v: &str) -> Result<Self, Self::Err> {
+        match v {
             "HTTP/0.9" => Ok(Self::Http0_9),
             "0.9" => Ok(Self::Http0_9),
             "HTTP/1.0" => Ok(Self::Http1_0),
@@ -43,18 +43,18 @@ impl FromStr for Version {
             "HTTP/3" => Ok(Self::Http3_0),
             "3.0" => Ok(Self::Http3_0),
             "3" => Ok(Self::Http3_0),
-            _ => Err(Error::InvalidVersion),
+            v => Err(Error::new(ErrorKind::InvalidInput, format!("The version `{}` is invalid.", v))),
         }
     }
 }
 
 impl<'a> std::convert::TryFrom<&[u8]> for Version {
-    type Error = crate::Error;
+    type Error = Error;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         match String::from_utf8(bytes.to_vec()) {
             Ok(txt) => Self::from_str(&txt),
-            Err(_) => Err(Error::InvalidStatus),
+            Err(e) => Err(Error::new(ErrorKind::InvalidInput, e.to_string())),
         }
     }
 }

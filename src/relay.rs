@@ -1,6 +1,7 @@
+use std::io::{Error, ErrorKind};
 use async_std::prelude::*;
 use async_std::io::{Read, Write};
-use crate::{Error, read_chunk_line, write_slice, flush_write};
+use crate::{read_chunk_line, write_slice, flush_write};
 
 pub async fn relay_exact<I, O>(input: &mut I, output: &mut O, length: usize) -> Result<usize, Error>
     where
@@ -21,19 +22,14 @@ pub async fn relay_exact<I, O>(input: &mut I, output: &mut O, length: usize) -> 
         };
 
         let mut bytes = vec![0u8; bufsize];
-        let size = match input.read(&mut bytes).await {
-            Ok(size) => size,
-            Err(_) => return Err(Error::UnableToRead),
-        };
+        let size = input.read(&mut bytes).await?;
         total += size;
 
         write_slice(output, &bytes).await?;
         flush_write(output).await?;
 
-        if size == 0 || total == length {
+        if total == length {
             break;
-        } else if total > length {
-            return Err(Error::LimitExceeded);
         }
     }
 
@@ -63,16 +59,16 @@ pub async fn relay_chunks<I, O>(input: &mut I, output: &mut O, limits: (Option<u
         let size = match String::from_utf8(size) {
             Ok(length) => match i64::from_str_radix(&length, 16) {
                 Ok(length) => length as usize,
-                Err(_) => return Err(Error::InvalidInput),
+                Err(e) => return Err(Error::new(ErrorKind::InvalidData, e.to_string())),
             },
-            Err(_) => return Err(Error::InvalidInput),
+            Err(e) => return Err(Error::new(ErrorKind::InvalidData, e.to_string())),
         };
 
         if size == 0 {
             length += relay_exact(input, output, 2).await?;
             break; // last chunk
         } else if datalimit.is_some() && total + size > datalimit.unwrap() {
-            return Err(Error::LimitExceeded);
+            return Err(Error::new(ErrorKind::InvalidData, format!("The operation hit the limit of {} bytes while relaying chunked HTTP body.", datalimit.unwrap())));
         } else {
             total += size;
             length += relay_exact(input, output, size).await?;

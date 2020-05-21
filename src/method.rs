@@ -1,6 +1,6 @@
 use std::fmt::{self, Display};
 use std::str::FromStr;
-use crate::Error;
+use std::io::{Error, ErrorKind};
 
 /// [Read more](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods)
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -68,7 +68,7 @@ impl Display for Method {
 }
 
 impl FromStr for Method {
-    type Err = crate::Error;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
@@ -81,18 +81,18 @@ impl FromStr for Method {
             "OPTIONS" => Ok(Self::Options),
             "TRACE" => Ok(Self::Trace),
             "PATCH" => Ok(Self::Patch),
-            _ => Err(Error::InvalidMethod),
+            s => Err(Error::new(ErrorKind::InvalidInput, format!("The method `{}` is invalid.", s))),
         }
     }
 }
 
 impl<'a> std::convert::TryFrom<&[u8]> for Method {
-    type Error = crate::Error;
+    type Error = Error;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         match String::from_utf8(bytes.to_vec()) {
             Ok(txt) => Self::from_str(&txt),
-            Err(_) => Err(Error::InvalidStatus),
+            Err(e) => Err(Error::new(ErrorKind::InvalidInput, e.to_string())),
         }
     }
 }

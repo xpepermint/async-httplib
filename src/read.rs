@@ -1,6 +1,6 @@
+use std::io::{Error, ErrorKind};
 use async_std::prelude::*;
 use async_std::io::{Read};
-use crate::{Error};
 
 pub async fn read_first_line<I>(input: &mut I, data: (&mut Vec<u8>, &mut Vec<u8>, &mut Vec<u8>), limit: Option<usize>) -> Result<usize, Error>
     where
@@ -12,16 +12,13 @@ pub async fn read_first_line<I>(input: &mut I, data: (&mut Vec<u8>, &mut Vec<u8>
 
     loop {
         let mut bytes = [0u8];
-        let size = match input.read(&mut bytes).await {
-            Ok(size) => size,
-            Err(_) => return Err(Error::UnableToRead),
-        };
+        let size = input.read(&mut bytes).await?;
         length += size;
 
         if size == 0 {
             break;
         } else if limit.is_some() && limit.unwrap() < length { // method + url + version = 2065
-            return Err(Error::InvalidInput);
+            return Err(Error::new(ErrorKind::InvalidData, "The operation hit the limit of {} bytes while reading the HTTP first line."));
         } else if bytes[0] == 32 { // space
             part += 1;
             continue;
@@ -32,7 +29,7 @@ pub async fn read_first_line<I>(input: &mut I, data: (&mut Vec<u8>, &mut Vec<u8>
             if stage == 1 {
                 break;
             } else {
-                return Err(Error::InvalidInput);
+                return Err(Error::new(ErrorKind::InvalidData, "The data is not a valid HTTP first line."));
             }
         }
 
@@ -46,7 +43,7 @@ pub async fn read_first_line<I>(input: &mut I, data: (&mut Vec<u8>, &mut Vec<u8>
     Ok(length)
 }
 
-pub async fn read_header<I>(input: &mut I, data: (&mut Vec<u8>, &mut Vec<u8>), limit: Option<usize>) -> Result<usize, Error>
+pub async fn read_header_line<I>(input: &mut I, data: (&mut Vec<u8>, &mut Vec<u8>), limit: Option<usize>) -> Result<usize, Error>
     where
     I: Read + Unpin,
 {
@@ -55,16 +52,13 @@ pub async fn read_header<I>(input: &mut I, data: (&mut Vec<u8>, &mut Vec<u8>), l
 
     loop {
         let mut bytes = [0u8];
-        let size = match input.read(&mut bytes).await {
-            Ok(size) => size,
-            Err(_) => return Err(Error::UnableToRead),
-        };
+        let size = input.read(&mut bytes).await?;
         length += size;
 
         if size == 0 {
             break;
         } else if limit.is_some() && limit.unwrap() < length {
-            return Err(Error::LimitExceeded);
+            return Err(Error::new(ErrorKind::InvalidData, format!("The operation hit the limit of {} bytes while reading the HTTP header line.", limit.unwrap())));
         } else if stage == 0 && bytes[0] == 58 { // first :
             stage = 1;
             continue;
@@ -76,13 +70,13 @@ pub async fn read_header<I>(input: &mut I, data: (&mut Vec<u8>, &mut Vec<u8>), l
                 stage = 3;
                 continue;
             } else {
-                return Err(Error::InvalidInput);
+                return Err(Error::new(ErrorKind::InvalidData, "The data is not a valid HTTP header line."));
             }
         } else if bytes[0] == 10 { // first/second \n
             if stage == 3 {
                 break;
             } else {
-                return Err(Error::InvalidInput);
+                return Err(Error::new(ErrorKind::InvalidData, "The data is not a valid HTTP header line."));
             }
         }
 
@@ -101,12 +95,7 @@ pub async fn read_exact<I>(input: &mut I, data: &mut Vec<u8>, length: usize) -> 
     I: Read + Unpin,
 {
     let mut bytes = vec![0u8; length];
-
-    match input.read_exact(&mut bytes).await {
-        Ok(size) => size,
-        Err(_) => return Err(Error::UnableToRead),
-    };
-
+    input.read_exact(&mut bytes).await?;
     data.append(&mut bytes);
 
     Ok(length)
@@ -121,16 +110,13 @@ pub async fn read_chunk_line<I>(input: &mut I, data: (&mut Vec<u8>, &mut Vec<u8>
 
     loop {
         let mut bytes = [0u8];
-        let size = match input.read(&mut bytes).await {
-            Ok(size) => size,
-            Err(_) => return Err(Error::UnableToRead),
-        };
+        let size = input.read(&mut bytes).await?;
         length += size;
 
         if size == 0 { // end of data
             break;
         } else if limit.is_some() && limit.unwrap() < length {
-            return Err(Error::LimitExceeded);
+            return Err(Error::new(ErrorKind::InvalidData, format!("The operation hit the limit of {} bytes while reading the HTTP body chunk line.", limit.unwrap())));
         } else if stage == 0 && bytes[0] == 59 { // char ;
             stage = 1;
             continue;
@@ -139,7 +125,7 @@ pub async fn read_chunk_line<I>(input: &mut I, data: (&mut Vec<u8>, &mut Vec<u8>
                 stage = 2;
                 continue;
             } else {
-                return Err(Error::InvalidInput);
+                return Err(Error::new(ErrorKind::InvalidData, "The data is not a valid HTTP chunk line."));
             }
         } else if bytes[0] == 10 { // char \n
             break;
@@ -168,16 +154,16 @@ pub async fn read_chunks<I>(input: &mut I, data: &mut Vec<u8>, limits: (Option<u
         let size = match String::from_utf8(size) {
             Ok(length) => match i64::from_str_radix(&length, 16) {
                 Ok(length) => length as usize,
-                Err(_) => return Err(Error::InvalidInput),
+                Err(e) => return Err(Error::new(ErrorKind::InvalidData, e.to_string())),
             },
-            Err(_) => return Err(Error::InvalidInput),
+            Err(e) => return Err(Error::new(ErrorKind::InvalidData, e.to_string())),
         };
         total += size;
         if size == 0 {
             length += read_exact(input, &mut Vec::new(), 2).await?;
             break; // last chunk
         } else if datalimit.is_some() && total + size > datalimit.unwrap() {
-            return Err(Error::LimitExceeded);
+            return Err(Error::new(ErrorKind::InvalidData, format!("The operation hit the limit of {} bytes while reading the HTTP body chunk data.", datalimit.unwrap())));
         } else {
             length += read_exact(input, data, size).await?;
             length += read_exact(input, &mut Vec::new(), 2).await?;
@@ -207,16 +193,16 @@ mod tests {
     #[async_std::test]
     async fn reads_header() {
         let (mut name, mut value) = (vec![], vec![]);
-        let size = read_header(&mut "Foo: foo\r\nBar: bar\r\n".as_bytes(), (&mut name, &mut value), None).await.unwrap();
+        let size = read_header_line(&mut "Foo: foo\r\nBar: bar\r\n".as_bytes(), (&mut name, &mut value), None).await.unwrap();
         assert_eq!(size, 10);
         assert_eq!(name, b"Foo");
         assert_eq!(value, b"foo");
         let (mut name, mut value) = (vec![], vec![]);
-        let size = read_header(&mut "\r\n".as_bytes(), (&mut name, &mut value), None).await.unwrap();
+        let size = read_header_line(&mut "\r\n".as_bytes(), (&mut name, &mut value), None).await.unwrap();
         assert_eq!(size, 2);
         assert_eq!(name, b"");
         assert_eq!(value, b"");
-        let exceeded = read_header(&mut "Foo".as_bytes(), (&mut name, &mut value), Some(1)).await;
+        let exceeded = read_header_line(&mut "Foo".as_bytes(), (&mut name, &mut value), Some(1)).await;
         assert!(exceeded.is_err());
     }
 

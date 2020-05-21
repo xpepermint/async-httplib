@@ -1,8 +1,8 @@
 use std::fmt::{self, Display};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
+use std::io::{Error, ErrorKind};
 use std::str::FromStr;
-use crate::Error;
 
 /// HTTP response status codes.
 ///
@@ -471,19 +471,8 @@ impl From<Status> for u16 {
     }
 }
 
-impl<'a> std::convert::TryFrom<&[u8]> for Status {
-    type Error = crate::Error;
-
-    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
-        match String::from_utf8(bytes.to_vec()) {
-            Ok(txt) => Self::from_str(&txt),
-            Err(_) => Err(Error::InvalidStatus),
-        }
-    }
-}
-
 impl std::convert::TryFrom<u16> for Status {
-    type Error = crate::Error;
+    type Error = Error;
 
     fn try_from(num: u16) -> Result<Self, Self::Error> {
         match num {
@@ -540,21 +529,29 @@ impl std::convert::TryFrom<u16> for Status {
             506 => Ok(Status::VariantAlsoNegotiates),
             510 => Ok(Status::NotExtended),
             511 => Ok(Status::NetworkAuthenticationRequired),
-            _ => Err(Error::InvalidStatus),
+            c => Err(Error::new(ErrorKind::InvalidInput, format!("The status code `{}` is invalid.", c))),
+        }
+    }
+}
+
+impl<'a> std::convert::TryFrom<&[u8]> for Status {
+    type Error = Error;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        match String::from_utf8(bytes.to_vec()) {
+            Ok(txt) => Self::from_str(&txt),
+            Err(e) => Err(Error::new(ErrorKind::InvalidInput, e.to_string())),
         }
     }
 }
 
 impl FromStr for Status {
-    type Err = crate::Error;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.parse::<u16>() {
-            Ok(num) => match Status::try_from(num) {
-                Ok(status) => Ok(status),
-                Err(_) => Err(crate::Error::InvalidStatus),
-            },
-            Err(_) => Err(crate::Error::InvalidStatus)
+            Ok(num) => Status::try_from(num),
+            Err(e) => Err(Error::new(ErrorKind::InvalidInput, e.to_string())),
         }
     }
 }
@@ -595,13 +592,13 @@ mod tests {
 
     #[test]
     fn implements_try_from() {
-        assert_eq!(Status::try_from(200), Ok(Status::Ok));
-        assert_eq!(Status::try_from("200".as_bytes()), Ok(Status::Ok));
+        assert_eq!(Status::try_from(200).unwrap(), Status::Ok);
+        assert_eq!(Status::try_from("200".as_bytes()).unwrap(), Status::Ok);
     }
 
     #[test]
     fn implements_from_str() {
-        assert_eq!(Status::from_str("200"), Ok(Status::Ok));
+        assert_eq!(Status::from_str("200").unwrap(), Status::Ok);
     }
 
     #[test]

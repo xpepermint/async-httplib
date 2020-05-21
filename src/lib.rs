@@ -1,4 +1,3 @@
-mod error;
 mod method;
 mod parse;
 mod read;
@@ -7,7 +6,6 @@ mod status;
 mod version;
 mod write;
 
-pub use error::*;
 pub use method::*;
 pub use parse::*;
 pub use read::*;
