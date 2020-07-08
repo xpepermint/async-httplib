@@ -4,6 +4,7 @@ This crate is built on top of [async-std](https://github.com/async-rs/async-std)
 
 **TO-DO:**
 
+- Ignore header case (up, down)
 - Support Content-Type decoding (e.g. multipart/form-data) : https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type
 - Handle redirects.
 - GZIP support for Transfer-Encoding: https://greenbytes.de/tech/webdav/rfc7230.html#header.transfer-encoding

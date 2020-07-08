@@ -140,37 +140,53 @@ pub async fn read_chunk_line<I>(input: &mut I, data: (&mut Vec<u8>, &mut Vec<u8>
     Ok(length)
 }
 
-pub async fn read_chunks<I>(input: &mut I, data: &mut Vec<u8>, limits: (Option<usize>, Option<usize>)) -> Result<usize, Error>
+pub async fn read_chunks<I>(input: &mut I, data: &mut Vec<u8>, limit: Option<usize>) -> Result<usize, Error>
     where
     I: Read + Unpin,
 {
-    let (chunklimit, datalimit) = limits;
     let mut length = 0;
-    let mut total = 0; // actual data size
 
     loop {
-        let (mut size, mut ext) = (vec![], vec![]);
-        length += read_chunk_line(input, (&mut size, &mut ext), chunklimit).await?;
-        let size = match String::from_utf8(size) {
-            Ok(length) => match i64::from_str_radix(&length, 16) {
-                Ok(length) => length as usize,
-                Err(e) => return Err(Error::new(ErrorKind::InvalidData, e.to_string())),
-            },
-            Err(e) => return Err(Error::new(ErrorKind::InvalidData, e.to_string())),
+        let limit = match limit {
+            Some(limit) => Some(limit - length),
+            None => None,
         };
-        total += size;
-        if size == 0 {
-            length += read_exact(input, &mut Vec::new(), 2).await?;
+        let mut buff = Vec::new();
+        let size = read_chunk(input, &mut buff, limit).await?;
+        length += size;
+
+        if size == 0 || buff.len() == 0 {
             break; // last chunk
-        } else if datalimit.is_some() && total + size > datalimit.unwrap() {
-            return Err(Error::new(ErrorKind::InvalidData, format!("The operation hit the limit of {} bytes while reading the HTTP body chunk data.", datalimit.unwrap())));
         } else {
-            length += read_exact(input, data, size).await?;
-            length += read_exact(input, &mut Vec::new(), 2).await?;
+            data.append(&mut buff);
         }
     }
 
     Ok(length)
+}
+
+pub async fn read_chunk<I>(input: &mut I, data: &mut Vec<u8>, limit: Option<usize>) -> Result<usize, Error>
+    where
+    I: Read + Unpin,
+{
+    let (mut length, mut ext) = (vec![], vec![]);
+    let mut size = read_chunk_line(input, (&mut length, &mut ext), limit).await?;
+    let length = match String::from_utf8(length) {
+        Ok(length) => match i64::from_str_radix(&length, 16) {
+            Ok(length) => length as usize,
+            Err(e) => return Err(Error::new(ErrorKind::InvalidData, e.to_string())),
+        },
+        Err(e) => return Err(Error::new(ErrorKind::InvalidData, e.to_string())),
+    };
+
+    if limit.is_some() && length > limit.unwrap() {
+        return Err(Error::new(ErrorKind::InvalidData, format!("The operation hit the limit of {} bytes while reading the HTTP body chunk.", limit.unwrap())));
+    } else {
+        size += read_exact(input, data, length).await?;
+        size += read_exact(input, &mut Vec::new(), 2).await?;
+    }
+
+    Ok(size)
 }
 
 #[cfg(test)]
@@ -228,11 +244,11 @@ mod tests {
     #[async_std::test]
     async fn reads_chunks() {
         let mut output = Vec::new();
-        let size = read_chunks(&mut "6\r\nHello \r\n6;ex=fo\r\nWorld!\r\n0\r\n\r\nTrail: er\r\n\r\n".as_bytes(), &mut output, (None, None)).await.unwrap(); // with extension `ex=fo` and trailer `Trail: er`
+        let size = read_chunks(&mut "6\r\nHello \r\n6;ex=fo\r\nWorld!\r\n0\r\n\r\nTrail: er\r\n\r\n".as_bytes(), &mut output, None).await.unwrap(); // with extension `ex=fo` and trailer `Trail: er`
         assert_eq!(size, 33);
         assert_eq!(String::from_utf8(output).unwrap(), "Hello World!");
         let mut output = Vec::new();
-        let exceeded = read_chunks(&mut "6\r\nHello 0\r\n\r\n".as_bytes(), &mut output, (Some(1), None)).await;
+        let exceeded = read_chunks(&mut "6\r\nHello 0\r\n\r\n".as_bytes(), &mut output, Some(1)).await;
         assert!(exceeded.is_err());
     }
 }
